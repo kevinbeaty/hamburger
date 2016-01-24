@@ -1,0 +1,23 @@
+{
+  "name": "hamburger",
+  "version": "0.1.0",
+  "description": "Thread First Promise Execution DSL",
+  "main": "hamburger.js",
+  "scripts": {
+    "test": "make test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kevinbeaty/hamburger.git"
+  },
+  "keywords": [
+    "async",
+    "promise"
+  ],
+  "author": "Kevin Beaty",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/kevinbeaty/hamburger/issues"
+  },
+  "homepage": "https://github.com/kevinbeaty/hamburger#readme"
+}
