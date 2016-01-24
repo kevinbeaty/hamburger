@@ -15,7 +15,7 @@ Documentation WIP...
 ```javascript
 const fs = require('fs')
 const path = require('path')
-const hamburger = require('..')
+const hamburger = require('hamburger')
 
 const Promise = require('bluebird')
 const R = require('ramda')
