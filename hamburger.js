@@ -27,6 +27,7 @@ function runNext(tasks){
     }
   }).then(function(result){
     if(tasks.length){
+      tasks[0] = tasks[0].slice()
       tasks[0].splice(1, 0, result)
       return runNext(tasks)
     }

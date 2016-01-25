@@ -180,3 +180,31 @@ function concatFiles(dir){
   return burger()
 }
 ```
+
+Note the first task will not be run until the thunk is executed and any subsequent task will not run until prior tasks has completed. The returned thunk can be executed multiple times with all tasks executed again.  This can be used for rerunning the same tasks against Promises that may have side effects, e.g. an request to a web service that may change.  In our example, maybe the contents of the files may change over time.
+
+```javascript
+function concatFilesThunk(dir){
+  // create a thunk of tasks
+  var burger = hamburger([
+    [dir],
+    [path.join, 'index.txt'],
+    [readFile, {encoding: 'utf8'}],
+    [_.split, '\n'],
+    [_.filter],
+    [_.map, _.unary(_.partial(path.join, dir))],
+    [_.map, _.partial(readFile, _, {encoding: 'utf8'})],
+    [Promise.all],
+    [_.join, '']
+  ])
+
+  // return the reusable thunk
+  return burger
+}
+
+var thunk = concatFilesThunk(dir)
+
+// re-execute the task chain multiple times
+thunk().then((result1) => {})
+thunk().then((result2) => {})
+```
