@@ -8,9 +8,7 @@ We will solve the [async-problem](https://github.com/plaid/async-problem):
 
 > Given a path to a directory containing an index file, index.txt, and zero or more other files, read the index file (which contains one filename per line), then read each of the files listed in the index concurrently, concat the resulting strings (in the order specified by the index), and write the result to stdout. 
 
-### Ramda
-
-Documentation WIP...
+A solution:
 
 ```javascript
 const fs = require('fs')
@@ -18,22 +16,22 @@ const path = require('path')
 const hamburger = require('hamburger')
 
 const Promise = require('bluebird')
-const R = require('ramda')
-const S = require('sanctuary')
+const _ = require('lodash')
 
-const join = R.curryN(2, path.join)
-const readFile = R.curry(R.flip(Promise.promisify(fs.readFile)))
+const readFile = Promise.promisify(fs.readFile)
 
 const concatFiles = (dir) =>
   hamburger
   ()
-    (join(dir, 'index.txt'))
-    (readFile({encoding: 'utf8'}))
-    (S.lines)
-    (R.map(join(dir)))
-    (R.map(readFile({encoding: 'utf8'})))
+    (dir)
+    (path.join, 'index.txt')
+    (readFile, {encoding: 'utf8'})
+    (_.split, '\n')
+    (_.filter)
+    (_.map, _.unary(_.partial(path.join, dir)))
+    (_.map, _.partial(readFile, _, {encoding: 'utf8'}))
     (Promise.all)
-    (R.join(''))
+    (_.join, '')
   ()
 
 const main = () => {
@@ -51,43 +49,134 @@ const main = () => {
 if (process.mainModule.filename === __filename) main()
 ```
 
-### Lodash
+## Discussion
+
+Here it is `concatFiles` again, but annotated:
 
 ```javascript
-const _ = require('lodash')
+/**
+ * concatFiles accepts a directory and returns
+ * a Promise solving the async-problem described above.
+ */
+function concatFiles(dir){
+  // Call hamburger with no args to start a chain
+  // This returns a function that accepts tasks to
+  // run. The returned function will continue returning
+  // functions until called with no arguments. Once
+  // called with no arguments, the tasks will be run in
+  // order defined threading the result of each function
+  // call as the the first argument of the next function
+  return hamburger()
 
-const readFile = _.ary(Promise.promisify(fs.readFile), 2)
-const join = _.ary(path.join, 2)
-
-const concatFiles = (dir) =>
-  hamburger
-  ()
+    // If the first argument in a task is not a function
+    // it is resolved as a Promise. Once resolved, it is
+    // threaded into the first argument of the next function
+    // Here `dir` is a String, so it is resolved directly
+    // into the first argument of the next task
     (dir)
-    (join, 'index.txt')
+
+    // The first argument is a function, so it is called
+    // with the result of the previous task as the first
+    // argument and any additional arguments following the
+    // first, i.e, `path.join(dir, 'input.txt)`. The result
+    // of this function is threaded to the first argument
+    // of the next function
+    (path.join, 'index.txt')
+
+    // readFile is a promisified version of fs.readFile
+    // It is a function so it is called with the result
+    // of the previous task as first argument and remaining
+    // arguments: `readFile(path.join(dir, 'input.txt'))`
+    // This returns a promise which will be resolved before
+    // calling the next task
     (readFile, {encoding: 'utf8'})
+
+    // Since the previous task returned a promise, it must
+    // be resolved. The result is threaded into the first
+    // argument of the next task:
+    //
+    // readFile(path.join(dir, 'input.txt'))
+    //  .then((result) => _.split(result, '\n')
+    // 
+    // This results in an array of lines in the file
     (_.split, '\n')
+
+    // The array of lines is threaded into `_.filter(lines)`
+    // to remove any empty lines.
     (_.filter)
-    (_.map, _.partial(join, dir))
+
+    // We have an array of file names, map this array using
+    // a function that joins the directory before the filename
+    // We are using `_.unary` here because `_.map` includes
+    // the array index, which we want to ignore.
+    // `_.map(fileNames, (fileName) => path.join(dir, fileName))`
+    (_.map, _.unary(_.partial(path.join, dir)))
+
+    // We now have an array of fully qualified file paths
+    // Map this again using the promisified `readFile`
+    //
+    // _.map(filePaths, (filePath) => 
+    //    readFile(filePath, {encoding: 'utf8'}))
+    // 
+    // This will return an array of promises. Each promise
+    // is reading a file and the files are read in parallel
     (_.map, _.partial(readFile, _, {encoding: 'utf8'}))
+
+    // We have an array of Promises, await with `Promise.all`:
+    // 
+    // Promise.all(arrayOfReadFilePromises)
+    //
+    // This returns a new Promise that  awaits all `readFile`
+    // promises to complete. The returned promise will be
+    // resolved with an array of file contents as a UTF8 string.
     (Promise.all)
+
+    // Join the array of file contents
+    //
+    //  
+    // Promise.all(arrayOfReadFilePromises)
+    //   .then((contentsArray) => _.join(contentsArray, ''))
     (_.join, '')
+
+    // We are done adding tasks, call with no-args to end the
+    // chain and return a Promise of the result of the final task.
   ()
+}
 ```
 
-```javascript
-const readUTF8 = _.partial(_.ary(Promise.promisify(fs.readFile), 2), _, {encoding: 'utf8'})
-const join = _.curry(path.join, 2)
+## Tasks
 
-const concatFiles = (dir) =>
-  hamburger
-  ()
-    (join(dir, 'index.txt'))
-    (readUTF8)
-    (_.split, '\n')
-    (_.filter)
-    (_.map, _.unary(join(dir)))
-    (_.map, readUTF8)
-    (Promise.all)
-    (_.join, '')
-  ()
+The function chaining is sugar for building an array of tasks. Each task
+can be defined as an array.
+
+- If the first argument of the array is not a function, it is resolved as a
+Promise and threaded as the first argument of the next task.
+- If the first argument of the array is a function,
+it is executed with the result of the previous task as the first argument and
+any additional arguments defined in the array as additional arguments.
+- If the first argument is `undefined`, i.e. the function is called with
+no arguments, it is not added as a task. Instead the first task is executed
+and a Promise is returned for the result of the entire task chain.
+
+Here is the example again with tasks explicitly created without the function
+chaining sugar:
+
+```javascript
+function concatFiles(dir){
+  // create a thunk of tasks
+  var burger = hamburger([
+    [dir],
+    [path.join, 'index.txt'],
+    [readFile, {encoding: 'utf8'}],
+    [_.split, '\n'],
+    [_.filter],
+    [_.map, _.unary(_.partial(path.join, dir))],
+    [_.map, _.partial(readFile, _, {encoding: 'utf8'})],
+    [Promise.all],
+    [_.join, '']
+  ])
+
+  // execute the thunk of tasks and return the Promise
+  return burger()
+}
 ```
