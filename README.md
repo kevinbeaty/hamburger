@@ -210,3 +210,49 @@ var thunk = concatFilesThunk(dir)
 thunk().then((result1) => {})
 thunk().then((result2) => {})
 ```
+
+### Ramda
+
+The same example again using [Ramda](https://github.com/ramda/ramda) and [Sanctuary](https://github.com/plaid/sanctuary) in a spirit similar to other [async-problem](https://github.com/plaid/async-problem) examples.
+
+```javascript
+/* jshint esnext:true */
+'use strict'
+
+const fs = require('fs')
+const path = require('path')
+const hamburger = require('hamburger')
+
+const Promise = require('bluebird')
+const R = require('ramda')
+const S = require('sanctuary')
+
+const join = R.curryN(2, path.join)
+const readFile = R.curry(R.flip(Promise.promisify(fs.readFile)))
+
+const concatFiles = (dir) =>
+  hamburger
+  ()
+    (join(dir, 'index.txt'))
+    (readFile({encoding: 'utf8'}))
+    (S.lines)
+    (R.map(join(dir)))
+    (R.map(readFile({encoding: 'utf8'})))
+    (Promise.all)
+    (R.join(''))
+  ()
+
+const main = () => {
+  concatFiles(process.argv[2])
+  .then(data => {
+      process.stdout.write(data)
+      process.exit(0)
+    },
+    err => {
+      process.stderr.write(String(err) + '\n')
+      process.exit(1)
+    })
+}
+
+if (process.mainModule.filename === __filename) main()
+```
